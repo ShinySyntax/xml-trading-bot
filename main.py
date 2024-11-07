@@ -1,191 +1,112 @@
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters, ContextTypes
+import requests
+import logging
 
+# Telegram bot token
+TELEGRAM_BOT_TOKEN = '7274386440:AAEcNC7xzch2jadfyAXlB74ROmwI1lM_ScA'
 
-from binance_api import getBalance,getOpenedPosition,getStats
-from telegram import  Update,Bot
-import configparser
+# Set up logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-from web_socket_trades import *
-from signalParser import signalParser
+# States for ConversationHandler
+BUY_AMOUNT, SELL_PERCENTAGE = range(2)
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import (
-    Application,
-    CallbackQueryHandler,
-    CommandHandler,
-    ContextTypes,
-    ConversationHandler,
-    MessageHandler,
-    filters,)
-# Stages
-START_ROUTES, END_ROUTES = range(2)
-# Callback data
-BALANCE, LIVE_TRADES, STATS= range(3)
-def read_config(file_path='config.ini'):
-    config = configparser.ConfigParser()
-    config.read(file_path)
-    return config
-config = read_config()
-
-bot_token = config.get('TELEGRAM', 'bot_token')
-target_chat_id = config.get('TELEGRAM', 'target_channel')
-botOwner=config.get('TELEGRAM', 'owner_id')
-bot = Bot(token=bot_token)
-
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Send message on `/start`."""
-    # Get user that sent /start and log his name
-    user = update.message.from_user
-    import os
-    if os.path.isfile("./UserRegisterDate.txt"):
-        print("User already exist")
+# Fetch price data from a public API
+def get_price():
+    response = requests.get("https://query1.finance.yahoo.com/v8/finance/chart/XLM-USD")
+    if response.status_code == 200:
+        data = response.json()
+        price = data['chart']['result'][0]['meta']['regularMarketPrice']
+        return price
     else:
-        from datetime import datetime
-        import time
-        file1 = open("UserRegisterDate.txt","a")
-        file1.write(str(((time.time())-24*60*60)*1000))
-        file1.close()
-    # Build InlineKeyboard where each button has a displayed text
-    # and a string as callback_data
-    # The keyboard is a list of button rows, where each row is in turn
-    # a list (hence `[[...]]`).
-    keyboard = [
-        [InlineKeyboardButton("💰Balance", callback_data=str(BALANCE)),],
-        [InlineKeyboardButton("🌐Live Trades", callback_data=str(LIVE_TRADES)),],
-        [InlineKeyboardButton("📊Stats", callback_data=str(STATS)),],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    # Send message with text and appended InlineKeyboard
-    await update.message.reply_text('''🚀 *Welcome to Autodictum \nYour Ultimate AutoTrading Bot!* 🤖💹\n\n Get ready for an incredible trading experience powered by Predictum signals! 📈✨\n\n✅ Auto-trade with precision\n💼 Diversify your portfolio\n📊 Real-time updates\n\n💡 Smart features: Intuitive controls, risk management, and more for savvy trading.\n''',parse_mode='Markdown', reply_markup=reply_markup)
-    # Tell ConversationHandler that we're in state `FIRST` now
-    return START_ROUTES
+        return "Error fetching price"
 
-async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show new choice of buttons"""
+# Start command with button layout
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    keyboard = [
+        [InlineKeyboardButton("Open Wallet", callback_data='open_wallet'), InlineKeyboardButton("Refresh", callback_data='refresh')],
+        [InlineKeyboardButton("Buy 100 XLM", callback_data='buy_100'), InlineKeyboardButton("Buy 500 XLM", callback_data='buy_500'), InlineKeyboardButton("Buy 'X' XLM", callback_data='buy_x')],
+        [InlineKeyboardButton("Sell 25%", callback_data='sell_25'), InlineKeyboardButton("Sell 100%", callback_data='sell_100'), InlineKeyboardButton("Sell 'X'%", callback_data='sell_x')],
+        [InlineKeyboardButton("Settings", callback_data='settings'), InlineKeyboardButton("Help", callback_data='help')]
+    ]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Select an option:", reply_markup=reply_markup)
+
+# Button callbacks
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    keyboard = [
-        [InlineKeyboardButton("🌐Live Trades", callback_data=str(LIVE_TRADES)),],
-        [InlineKeyboardButton("📊Stats", callback_data=str(STATS)),],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
-        text="*Here you able to see your #USDT balance on your Binance account* 🤑"+'\n'+getBalance(), reply_markup=reply_markup,parse_mode="Markdown"
-    )
-    return START_ROUTES
+    action = query.data
 
+    if action == 'open_wallet':
+        await query.edit_message_text(text="Opening wallet... Your current balance is 1000 XLM.")
+    elif action == 'refresh':
+        price = get_price()
+        await query.edit_message_text(text=f"Current XLM Price: ${price}")
+    elif action == 'buy_100':
+        await query.edit_message_text(text="Buying 100 XLM worth of token (simulated).")
+    elif action == 'buy_500':
+        await query.edit_message_text(text="Buying 500 XLM worth of token (simulated).")
+    elif action == 'buy_x':
+        await query.edit_message_text(text="Please enter the XLM amount to buy:")
+        return BUY_AMOUNT
+    elif action == 'sell_25':
+        await query.edit_message_text(text="Selling 25% of your holdings (simulated).")
+    elif action == 'sell_100':
+        await query.edit_message_text(text="Selling 100% of your holdings (simulated).")
+    elif action == 'sell_x':
+        await query.edit_message_text(text="Please enter the percentage of holdings to sell:")
+        return SELL_PERCENTAGE
+    elif action == 'settings':
+        await query.edit_message_text(text="Settings menu: Modify preferences here.")
+    elif action == 'help':
+        await query.edit_message_text(text="Help menu: Use this bot to manage XLM trading actions.")
 
-async def openedposition(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show new choice of buttons"""
-    query = update.callback_query
-    await query.answer()
-    keyboard = [
-        [InlineKeyboardButton("💰Balance", callback_data=str(BALANCE)),],
-        [InlineKeyboardButton("📊Stats", callback_data=str(STATS)),],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-   
-    text="*Live Trades*\n ----------------------\n"
-    for i in getOpenedPosition():
-            text=text+i.__str__()
-    text="You not have access because your investments under 5k$"
-    await query.edit_message_text(text=text,parse_mode='Markdown', reply_markup=reply_markup)
-   
-    return START_ROUTES
+# Conversation handlers for custom input
+async def buy_x(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Enter the XLM amount to buy:")
+    return BUY_AMOUNT
 
+async def sell_x(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Enter the percentage of holdings to sell:")
+    return SELL_PERCENTAGE
 
+async def buy_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    amount = update.message.text
+    await update.message.reply_text(f"Simulated buy order for {amount} XLM.")
+    return ConversationHandler.END
 
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show new choice of buttons"""
-    query = update.callback_query
-    
-    await query.answer()
-    keyboard = [
-        [InlineKeyboardButton("💰Balance", callback_data=str(BALANCE)),],
-        [InlineKeyboardButton("🌐Live Trades", callback_data=str(LIVE_TRADES)),],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-        # Initial display of stats
-    text = getStats()
-    await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode='Markdown')
-        
+async def sell_percentage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    percentage = update.message.text
+    await update.message.reply_text(f"Simulated sell order for {percentage}% of holdings.")
+    return ConversationHandler.END
 
+# Main function to set up the bot
+def main():
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    return START_ROUTES
+    # Basic command handler to start the bot
+    application.add_handler(CommandHandler("start", start))
 
+    # Button callback handler
+    application.add_handler(CallbackQueryHandler(button))
 
-
-async def readmessages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        try:
-            result = update.channel_post.text
-            success=signalParser(result)
-            if(success[0]):
-                symbol=success[0][1]["symbol"]
-                leverage=success[0][1]["leverage"]
-                side=success[0][1]["side"]
-
-            
-                await bot.send_message(chat_id=target_chat_id, text=f"📣*New Trade!* \n\n 🎛Symbol: #{symbol}\n 🏦Leverage: {leverage}\n 📈Position: {side}",parse_mode='Markdown')
-            else:
-                await bot.send_message(chat_id=target_chat_id, text="Trade Not Success ")
-        except:
-                await bot.send_message(chat_id=target_chat_id, text="Message not supported click /start to continue")
-    
-
-def main() -> None:
-    """Run the bot."""
-    # Create the Application and pass it your bot's token.
-    
-    application = Application.builder().token(bot_token).build()
-
-    # Setup conversation handler with the states FIRST and SECOND
-    # Use the pattern parameter to pass CallbackQueries with specific
-    # data pattern to the corresponding handlers.
-    # ^ means "start of line/string"
-    # $ means "end of line/string"
-    # So ^ABC$ will only allow 'ABC'
+    # Conversation handler for buy and sell custom inputs
     conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("start", start)],
-    states={
-        START_ROUTES: [
-            CallbackQueryHandler(balance, pattern="^" + str(BALANCE) + "$"),
-            CallbackQueryHandler(openedposition, pattern="^" + str(LIVE_TRADES) + "$"),
-            CallbackQueryHandler(stats, pattern="^" + str(STATS) + "$"),
-        ],
-    },
-    fallbacks=[CommandHandler("start", start)],
-)
-
-    # Add ConversationHandler to application that will be used for handling updates
+        entry_points=[CallbackQueryHandler(button)],
+        states={
+            BUY_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, buy_amount)],
+            SELL_PERCENTAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, sell_percentage)],
+        },
+        fallbacks=[]
+    )
     application.add_handler(conv_handler)
 
-    application.add_handler(MessageHandler(filters.ALL, readmessages))
+    # Start the bot
+    application.run_polling()
 
-    # Run the bot until the user presses Ctrl-C
-    # We pass 'allowed_updates' handle *all* updates including `chat_member` updates
-    # To reset this, simply pass `allowed_updates=[]`
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
-    
-if __name__ == "__main__":
-
-
+if __name__ == '__main__':
     main()
-
-
-def read_config(file_path='config.ini'):
-    config = configparser.ConfigParser()
-    config.read(file_path)
-    return config
-
-
-
-
-
-
-    
-
-
-
-
